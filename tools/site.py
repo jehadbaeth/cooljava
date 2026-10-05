@@ -51,10 +51,34 @@ def rewrite_links(tokens):
             tok.attrSet("href", path + ("#" + frag if frag else ""))
 
 
+def label_tables(body):
+    """Tag tables so small screens can restyle them: index tables become cards,
+    other tables with three or more columns stack each row with column labels."""
+
+    def one(m):
+        table = m.group(0)
+        headers = [re.sub(r"<[^>]+>", "", h).strip() for h in re.findall(r"<th[^>]*>(.*?)</th>", table, re.S)]
+        if headers == ["#", "Topic", "Java", "Verdict"]:
+            cls = "index"
+        elif len(headers) >= 3:
+            cls = "stack"
+        else:
+            return table
+
+        def row(r):
+            cells = iter(headers)
+            return re.sub(r"<td", lambda _: f'<td data-label="{html.escape(next(cells, ""))}"', r.group(0))
+
+        table = re.sub(r"<tbody>.*?</tbody>", lambda b: re.sub(r"<tr>.*?</tr>", row, b.group(0), flags=re.S), table, flags=re.S)
+        return table.replace("<table>", f'<table class="{cls}">', 1)
+
+    return re.sub(r"<table>.*?</table>", one, body, flags=re.S)
+
+
 def render(text):
     tokens = md.parse(text)
     rewrite_links(tokens)
-    return md.renderer.render(tokens, md.options, {})
+    return label_tables(md.renderer.render(tokens, md.options, {}))
 
 
 PAGE = """<!doctype html>
@@ -91,6 +115,35 @@ table {{ border-collapse:collapse; width:100%; display:block; overflow-x:auto; f
 th, td {{ border:1px solid var(--border); padding:6px 12px; vertical-align:top; text-align:left; }}
 th {{ background:var(--code); }}
 img {{ max-width:100%; }}
+main {{ overflow-wrap:break-word; }}
+:not(pre) > code, main a {{ overflow-wrap:anywhere; }}
+ul, ol {{ padding-left:1.6rem; }}
+@media (max-width: 640px) {{
+  body {{ font-size:15.5px; }}
+  h1 {{ font-size:1.6rem; }}
+  h2 {{ font-size:1.3rem; }}
+  ul, ol {{ padding-left:1.2rem; }}
+  pre {{ padding:10px 12px; margin-left:-4px; margin-right:-4px; }}
+  pre code {{ font-size:.78rem; }}
+  blockquote {{ padding:.1rem .8rem; font-size:1rem; }}
+  header {{ padding-top:12px; padding-bottom:8px; }}
+  nav.pager {{ gap:10px; }}
+  /* wide tables: one card per row, every cell labelled with its column */
+  table.stack, table.stack tbody, table.stack tr, table.stack td {{ display:block; width:100%; }}
+  table.stack thead {{ display:none; }}
+  table.stack tr {{ border:1px solid var(--border); border-radius:8px; padding:6px 12px; margin:0 0 10px; }}
+  table.stack td {{ border:0; padding:4px 0; }}
+  table.stack td::before {{ content:attr(data-label); display:block; font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }}
+  /* index tables: number and title on top, version and verdict as pills below */
+  table.index, table.index tbody {{ display:block; }}
+  table.index thead {{ display:none; }}
+  table.index tr {{ display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 8px; border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:0 0 10px; }}
+  table.index td {{ display:block; border:0; padding:0; }}
+  table.index td:nth-child(1) {{ font-weight:700; color:var(--muted); font-variant-numeric:tabular-nums; width:2.4rem; }}
+  table.index td:nth-child(2) {{ flex:1 1 calc(100% - 3.4rem); min-width:0; }}
+  table.index td:nth-child(3) {{ margin-left:2.9rem; }}
+  table.index td:nth-child(3), table.index td:nth-child(4) {{ font-size:.82rem; color:var(--muted); background:var(--code); border-radius:999px; padding:1px 10px; }}
+}}
 footer {{ color:var(--muted); font-size:.85rem; border-top:1px solid var(--border); margin-top:3rem; padding-top:12px; padding-bottom:28px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
 </style>
 </head>
